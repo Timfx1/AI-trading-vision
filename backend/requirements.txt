@@ -1,0 +1,7 @@
+flask>=2.3
+flask-cors>=4.0
+tensorflow>=2.12
+matplotlib>=3.5
+selenium>=4.10
+webdriver-manager>=4.0
+pillow>=10.0

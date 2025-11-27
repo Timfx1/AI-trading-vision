@@ -1,0 +1,13 @@
+This project originally had:
+
+- backend/dataset/valid_setup/ : ~X images from TradingView (valid setups)
+- backend/dataset/invalid_setup/ : ~Y images from TradingView (invalid setups)
+- backend/outputs/model.keras : trained CNN model
+- backend/data/image_index.pkl + embedding_index.pkl : similarity search indexes
+
+These are NOT included in the ZIP to keep it small.
+To recreate:
+1. Place your screenshots into backend/dataset/valid_setup and invalid_setup.
+2. Run: py backend/scripts/train_cnn_model.py
+3. Run: py backend/scripts/build_image_index.py
+4. Run: py backend/scripts/build_embedding_index.py

@@ -1,0 +1,167 @@
+body {
+  background: #0b111b;
+  color: #e2e8f0;
+  font-family: "Inter", sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.6rem;
+  color: #0ea5a4;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.start-stop {
+  background: #0ea5a4;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.start-stop:hover {
+  background: #089c9c;
+}
+
+.alert-icon {
+  position: relative;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.summary-item {
+  background: #111827;
+  padding: 10px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.chart-section {
+  margin-top: 25px;
+  background: #111827;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.alerts {
+  margin-top: 25px;
+}
+
+.alerts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.alert-item {
+  background: #111827;
+  border: 1px solid #1f2a37;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.alert-item:hover {
+  background: #1f2a37;
+}
+
+.alert-msg {
+  font-weight: 600;
+  color: #0ea5a4;
+}
+
+.alert-conf {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.alert-ts {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 40px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-content {
+  background: #111827;
+  padding: 20px;
+  border-radius: 10px;
+  width: 300px;
+}
+
+.close-modal {
+  margin-top: 10px;
+  width: 100%;
+  background: #0ea5a4;
+  border: none;
+  padding: 8px;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.muted {
+  color: #7b8a97;
+  font-size: 0.9rem;
+}
