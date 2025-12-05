@@ -1,14 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export default function ComparisonPanel({ comparisons, activeMode }) {
   const [selected, setSelected] = useState(null); // for zoomed image
+
+  // Debug helper – you’ll see the raw data in the browser console
+  useEffect(() => {
+    console.log("🔍 Comparisons from backend:", comparisons);
+  }, [comparisons]);
 
   if (!comparisons || comparisons.length === 0) {
     return (
       <div className="h-full bg-white/5 border border-dashed border-white/20 rounded-2xl flex items-center justify-center text-xs md:text-sm text-white/50 p-4">
         No comparisons yet. Upload a chart and run{" "}
         <span className="mx-1 font-semibold text-teal-300">
-          Predict & Compare
+          Predict &amp; Compare
         </span>{" "}
         to see similar setups from your dataset.
       </div>
@@ -21,6 +26,42 @@ export default function ComparisonPanel({ comparisons, activeMode }) {
       : activeMode === "smart"
       ? "Smart Vision"
       : "Simple Vision";
+
+  // 🔑 Turn any messy path into a clean image URL that Flask can serve
+  const toImageUrl = (rawPath) => {
+    if (!rawPath) return "";
+
+    const BASE = "http://127.0.0.1:5000/images/";
+
+    // 1) If it already starts with our /images base, clean everything AFTER it
+    if (rawPath.startsWith(BASE)) {
+      let rest = rawPath.slice(BASE.length); // strip base prefix
+
+      // Normalize slashes
+      rest = rest.replace(/\\/g, "/");
+
+      // Remove any leading ../../.. stuff up to and including "dataset/"
+      // Example:
+      //   ../../../../Downloads/.../backend/dataset/valid_setup/AC.png
+      // -> valid_setup/AC.png
+      rest = rest.replace(/^(\.\.\/)+.*dataset\//, "");
+
+      return BASE + rest;
+    }
+
+    // 2) If it's some other http(s) URL, just return as-is
+    if (rawPath.startsWith("http://") || rawPath.startsWith("https://")) {
+      return rawPath;
+    }
+
+    // 3) Plain local filesystem path: strip up to dataset/ and map to /images/
+    // Example:
+    //   C:\...\backend\dataset\valid_setup\AC.png
+    let rel = rawPath.replace(/\\/g, "/");
+    rel = rel.replace(/^.*dataset\//, ""); // -> valid_setup/AC.png
+
+    return BASE + rel;
+  };
 
   return (
     <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20 shadow-lg h-full flex flex-col">
@@ -41,11 +82,11 @@ export default function ComparisonPanel({ comparisons, activeMode }) {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 overflow-y-auto max-h-[320px] pr-1">
         {comparisons.map((c, i) => {
+          const imgUrl = toImageUrl(c.path);
+
           const hasSim = c.similarity !== undefined && c.similarity !== null;
           const similarity =
-            hasSim && c.similarity <= 1
-              ? c.similarity * 100
-              : c.similarity; // assume already %
+            hasSim && c.similarity <= 1 ? c.similarity * 100 : c.similarity;
           const distance = c.distance;
 
           const labelText =
@@ -64,7 +105,7 @@ export default function ComparisonPanel({ comparisons, activeMode }) {
             >
               <div className="relative">
                 <img
-                  src={c.path}
+                  src={imgUrl}
                   alt={`Similar setup ${i + 1}`}
                   className="w-full h-24 md:h-28 object-cover"
                 />
@@ -91,7 +132,8 @@ export default function ComparisonPanel({ comparisons, activeMode }) {
                 </div>
                 {distance !== undefined && (
                   <p className="text-[10px] text-white/50">
-                    Distance: {typeof distance === "number"
+                    Distance:{" "}
+                    {typeof distance === "number"
                       ? distance.toFixed(3)
                       : distance}
                   </p>
@@ -115,7 +157,7 @@ export default function ComparisonPanel({ comparisons, activeMode }) {
             <div className="flex flex-col md:flex-row gap-4 md:gap-6">
               <div className="flex-1 flex items-center justify-center bg-black/60 rounded-xl border border-white/15">
                 <img
-                  src={selected.path}
+                  src={toImageUrl(selected.path)}
                   alt="Zoomed similar setup"
                   className="max-h-[70vh] w-full object-contain rounded-lg"
                 />

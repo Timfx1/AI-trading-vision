@@ -97,3 +97,27 @@ This tool combines **AI**, **chart pattern recognition**, and **educational feed
 ```bash
 git clone https://github.com/Timfx1/AI-trading-vision.git
 cd AI-trading-vision
+
+ Frontend Setup
+ cd ../frontend
+npm install
+npm start
+
+Backend Setup
+Create virtual environment
+cd backend
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+Install Python dependencies
+pip install -r requirements.txt
+Train the model (optional — only if you don’t have model.keras)
+py scripts/train_cnn_model.py
+Build vision indexes
+py scripts/build_image_index.py
+py scripts/build_embedding_index.py
+Start the API server
+py app.py
+
+
+

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import PredictPanel from "./components/PredictPanel";
-import Comparisons from "./components/Comparisons";
+import ComparisonsPanel from "./components/ComparisonPanel";
 import { FaMoon, FaSun, FaQuestionCircle } from "react-icons/fa";
 import HistoryPanel from "./components/HistoryPanel";
 import HelpWidget from "./components/HelpWidget";
@@ -43,12 +43,14 @@ export default function App() {
       {/* Main Content */}
       <main className="flex flex-col items-center justify-center w-full max-w-6xl mx-auto px-6 py-10">
         <PredictPanel />
+
+        {/* Comparisons panel right under prediction */}
         <div className="mt-12 w-full">
-          {/* <Comparisons /> */}
+          <ComparisonsPanel />
         </div>
+
         <HistoryPanel />
         <HelpWidget />
-
       </main>
 
       {/* Über mich / About & Footer */}

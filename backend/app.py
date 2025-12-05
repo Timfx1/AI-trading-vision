@@ -336,6 +336,7 @@ def serve_image(filename):
     return send_from_directory(dataset_dir, filename)
 
 
+
 # === Demo Bot ===
 SYMS = ["AAPL", "TSLA", "NVDA", "MSFT", "ETH-USD", "BTC-USD", "EURUSD", "GBPUSD"]
 BOT_RUNNING = False
