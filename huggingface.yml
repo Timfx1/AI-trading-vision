@@ -1,0 +1,11 @@
+# HuggingFace Space Configuration
+# Backend: Flask API (Python)
+# Frontend: React Build (optional)
+
+sdk: docker
+
+# Space runs with Dockerfile
+app_port: 5000
+env:
+  - name: DEEPSEEK_API_KEY
+    secret: true
