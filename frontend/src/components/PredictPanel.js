@@ -13,7 +13,7 @@ import { useAccent } from "../context/AccentContext";
 import { useAuth } from "../auth/AuthContext";
 
 export default function PredictPanel() {
-const BACKEND = "https://timfx1-api.onrender.com";
+const BACKEND = "https://timfx1-ai-backend.hf.space";
 
   const { strings } = useLang();
   const { accent } = useAccent();
