@@ -1,149 +1,191 @@
 """
 ==========================================================
-Project:   QuantumEdge Trading Pattern AI
-Author:    [Your Full Name or Brand]
-Version:   1.0.0
-Date:      2025-10-16
-Description:
-    AI-powered chart pattern recognition system that allows
-    traders to upload setups, predict validity, and compare
-    them with curated references or AI embeddings.
-
-License:   Proprietary - All Rights Reserved
-Contact:   youremail@domain.com | www.yourbrand.com
-==========================================================
-DISCLAIMER:
-    This software is for educational purposes only.
-    It does not provide financial advice or trading signals.
-    Use responsibly. Past performance is not indicative of
-    future results.
+QuantumEdge Trading Pattern AI - Backend
+Author: Timfx1
+Version: 2.1 (Clean Rewrite)
 ==========================================================
 """
 
+# ---------------------------------------------------------
+# MUST BE FIRST
+# ---------------------------------------------------------
 from __future__ import annotations
-import os, time, json, threading, queue, random, sqlite3, csv, pickle
-from dataclasses import dataclass, asdict
-from typing import List, Dict, Any
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+# ---------------------------------------------------------
+# Standard libs
+# ---------------------------------------------------------
+import os, time, json, random, queue, sqlite3, csv, pickle, threading, re
+
+# ---------------------------------------------------------
+# Flask
+# ---------------------------------------------------------
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
+
+# ---------------------------------------------------------
+# Image / ML
+# ---------------------------------------------------------
 import numpy as np
+import cv2
 from PIL import Image
 import imagehash
+import pytesseract
+import base64
+import io
 
-# Optional: TensorFlow for Smart Vision
+
+
+# ---------------------------------------------------------
+# Optional TensorFlow
+# ---------------------------------------------------------
 try:
     import tensorflow as tf
     TF_OK = True
-except Exception:
+except:
     TF_OK = False
 
+# ---------------------------------------------------------
+# Internal modules
+# ---------------------------------------------------------
+from vision.normalize import normalize_chart
+from training.trainer import TRAIN_STATUS, training_thread
+from auth.auth import auth_bp, init_user_db
 
-# === Flask App Setup ===
+# ---------------------------------------------------------
+# OpenAI
+# ---------------------------------------------------------
+from openai import OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# ---------------------------------------------------------
+# Flask init
+# ---------------------------------------------------------
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
+# Attach auth routes
+app.register_blueprint(auth_bp, url_prefix="/api/auth")
+init_user_db()
+
 DB_PATH = "signals.db"
-SETUPS_CSV = os.path.join("data", "setups.csv")
+SETUPS_CSV = "data/setups.csv"
 
+# ---------------------------------------------------------
+# Tesseract
+# ---------------------------------------------------------
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# === Load Reference Setups ===
-REFS: List[Dict[str, Any]] = []
+# ---------------------------------------------------------
+# Load References
+# ---------------------------------------------------------
+REFS = []
+
 
 def load_reference_setups():
     global REFS
     REFS = []
+
     if os.path.exists(SETUPS_CSV):
-        with open(SETUPS_CSV, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                if r.get("label") in ("valid", "invalid") and r.get("url", "").startswith("http"):
-                    REFS.append({
-                        "id": r.get("id"),
-                        "pair_abbr": r.get("pair_abbr"),
-                        "symbol": r.get("symbol"),
-                        "label": r.get("label"),
-                        "url": r.get("url"),
-                        "notes": r.get("notes", ""),
-                        "added_at": r.get("added_at", ""),
-                    })
-    print(f"Loaded {len(REFS)} references from {SETUPS_CSV}")
+        with open(SETUPS_CSV, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("label") in ("valid", "invalid"):
+                    REFS.append(row)
+
+    print(f"Loaded {len(REFS)} references.")
 
 
-# === SQLite for signals ===
+# ---------------------------------------------------------
+# SQLite: Signals
+# ---------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS signals (
-        id TEXT PRIMARY KEY, symbol TEXT, timeframe TEXT,
-        direction TEXT, confidence REAL, openedAt REAL
-    )""")
-    conn.commit(); conn.close()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS signals (
+            id TEXT PRIMARY KEY,
+            symbol TEXT,
+            timeframe TEXT,
+            direction TEXT,
+            confidence REAL,
+            openedAt REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 
-def save_signal_db(s: Dict[str, Any]):
+def save_signal_db(data):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO signals VALUES (?,?,?,?,?,?)",
-              (s["id"], s["symbol"], s["timeframe"], s["direction"], s["confidence"], s["openedAt"]))
-    conn.commit(); conn.close()
+    c.execute("""INSERT OR REPLACE INTO signals VALUES (?, ?, ?, ?, ?, ?)""",
+              (
+                  data["id"], data["symbol"], data["timeframe"],
+                  data["direction"], data["confidence"], data["openedAt"]
+              ))
+    conn.commit()
+    conn.close()
 
 
 def load_signals_db(limit=100):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT id, symbol, timeframe, direction, confidence, openedAt FROM signals ORDER BY openedAt DESC LIMIT ?", (limit,))
-    rows = c.fetchall(); conn.close()
-    return [{"id": r[0], "symbol": r[1], "timeframe": r[2], "direction": r[3], "confidence": r[4], "openedAt": r[5]} for r in rows]
+    c.execute("SELECT id, symbol, timeframe, direction, confidence, openedAt "
+              "FROM signals ORDER BY openedAt DESC LIMIT ?", (limit,))
+    rows = c.fetchall()
+    conn.close()
+
+    return [{
+        "id": r[0], "symbol": r[1], "timeframe": r[2],
+        "direction": r[3], "confidence": r[4], "openedAt": r[5]
+    } for r in rows]
 
 
-# === State ===
-@dataclass
-class Signal:
-    id: str
-    symbol: str
-    timeframe: str
-    direction: str
-    confidence: float
-    openedAt: float
+# ---------------------------------------------------------
+# SSE Alerts
+# ---------------------------------------------------------
+subscribers = []
 
 
-STATE = {
-    "summary": {"totalSetups": 24, "valid": 18, "invalid": 6, "activeSignals": 3, "signalsToday": 12, "winRate": 0.71, "recognition": 0.94},
-    "signals": []  # type: List[Signal]
-}
-
-subscribers: List[queue.Queue] = []
-
-
-# === SSE Alerts ===
-def publish_alert(payload: Dict[str, Any]):
+def publish_alert(payload):
     dead = []
-    for q in list(subscribers):
+    for q in subscribers:
         try:
             q.put_nowait(payload)
-        except Exception:
+        except:
             dead.append(q)
+
     for d in dead:
         if d in subscribers:
             subscribers.remove(d)
 
 
-def sse_stream(q: queue.Queue):
+def sse_stream(q):
     while True:
         try:
-            payload = q.get(timeout=60)
+            msg = q.get(timeout=60)
+            yield f"data: {json.dumps(msg)}\n\n"
         except queue.Empty:
             yield ": keep-alive\n\n"
-            continue
-        yield f"data: {json.dumps(payload)}\n\n"
 
 
-# === API ROUTES ===
+# ---------------------------------------------------------
+# API: Summary
+# ---------------------------------------------------------
 @app.get("/api/summary")
 def get_summary():
-    return jsonify(STATE["summary"])
+    return jsonify({
+        "referenceCount": len(REFS),
+        "datasetReady": True
+    })
 
 
+# ---------------------------------------------------------
+# API: Signals
+# ---------------------------------------------------------
 @app.get("/api/signals")
 def get_signals():
     return jsonify(load_signals_db())
@@ -151,236 +193,474 @@ def get_signals():
 
 @app.post("/api/signals")
 def add_signal():
-    data = request.get_json(force=True)
-    s = Signal(
-        id=data.get("id") or str(time.time_ns()),
-        symbol=data["symbol"],
-        timeframe=data.get("timeframe", "15m"),
-        direction=data.get("direction", "LONG"),
-        confidence=float(data.get("confidence", 0.8)),
-        openedAt=float(data.get("openedAt", time.time())),
-    )
-    s_dict = asdict(s)
-    STATE["signals"].insert(0, s)
-    save_signal_db(s_dict)
-    publish_alert({"type": "signal", "signal": s_dict})
-    STATE["summary"]["activeSignals"] = len(STATE["signals"])
-    STATE["summary"]["signalsToday"] += 1
-    return jsonify({"ok": True, "signal": s_dict})
+    data = request.get_json()
+    entry = {
+        "id": str(time.time_ns()),
+        "symbol": data["symbol"],
+        "timeframe": data.get("timeframe", "15m"),
+        "direction": data.get("direction", "LONG"),
+        "confidence": float(data.get("confidence", 0.8)),
+        "openedAt": time.time(),
+    }
+
+    save_signal_db(entry)
+    publish_alert({"type": "signal", "signal": entry})
+    return jsonify({"ok": True, "signal": entry})
 
 
-@app.post("/api/summary")
-def update_summary():
-    data = request.get_json(force=True)
-    STATE["summary"].update({k: v for k, v in data.items() if k in STATE["summary"]})
-    return jsonify({"ok": True, "summary": STATE["summary"]})
+# ---------------------------------------------------------
+# LLM Pattern Labeling
+# ---------------------------------------------------------
+# @app.post("/api/llm/label")
+# def llm_label():
+#     try:
+#         if "image" not in request.files:
+#             print("No image provided")
+#             return jsonify({"error": "No image"}), 400
+
+#         file = request.files["image"]
+
+#         # Read image and encode base64
+#         import base64
+#         img_bytes = file.read()
+#         b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+#         # Debug check
+#         print("🔐 OPENAI KEY:", os.getenv("OPENAI_API_KEY")[:12], "...")
+
+#         # LLM Vision Request
+#         response = client.chat.completions.create(
+#             model="gpt-4o-mini",
+#             messages=[
+#                 {
+#                     "role": "user",
+#                     "content": [
+#                         {"type": "text",
+#                          "text": "Identify the trading pattern, trend direction, and entry logic."},
+#                         {
+#                             "type": "image_url",
+#                             "image_url": {
+#                                 "url": f"data:image/png;base64,{b64}"
+#                             }
+#                         }
+#                     ]
+#                 }
+#             ]
+#         )
+
+#         txt = response.choices[0].message.content.strip()
+#         pattern = txt.split("\n")[0]
+
+#         return jsonify({
+#             "pattern": pattern,
+#             "reason": txt
+#         })
+
+#     except Exception as e:
+#         print("🔥🔥🔥 LLM ERROR 🔥🔥🔥")
+#         import traceback
+#         traceback.print_exc()
+#         return jsonify({"error": str(e)}), 500
+
+# -------------------------------
+#  LLM PATTERN IDENTIFICATION (DeepSeek)
+# -------------------------------
+
+from deepseek import DeepSeek
+import base64
+
+DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY")
+deep_client = DeepSeek(DEEPSEEK_KEY)
+
+@app.post("/api/llm/label")
+def llm_label():
+    if "image" not in request.files:
+        return jsonify({"error": "No image"}), 400
+
+    file = request.files["image"]
+    img_bytes = file.read()
+    b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+    prompt = f"""
+You are a professional market analyst. 
+Look at the provided chart image and identify:
+
+1. The pattern name
+2. Trend direction (uptrend / downtrend / ranging)
+3. Entry logic (why enter)
+4. Risk context (why good or bad)
+5. Whether it's a high-quality setup (A/B/C grade)
+
+Respond with short clear text.
+
+Image is provided below as base64.
+"""
+
+    try:
+        response = deep_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "You analyze chart patterns."},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", 
+                         "image_url": f"data:image/png;base64,{b64}"}
+                    ],
+                },
+            ]
+        )
+
+        full_text = response.choices[0].message["content"].strip()
+
+        # first line becomes simplified pattern name
+        pattern = full_text.split("\n")[0][:60]
+
+        return jsonify({
+            "pattern": pattern,
+            "reason": full_text
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-@app.get("/api/alerts/stream")
-def alerts_stream():
-    q = queue.Queue()
-    subscribers.append(q)
-    return Response(sse_stream(q), mimetype="text/event-stream")
 
 
+# ---------------------------------------------------------
+# SL/TP Extraction
+# ---------------------------------------------------------
+@app.post("/api/extract_levels")
+def extract_levels():
+    if "image" not in request.files:
+        return jsonify({"error": "No file"}), 400
+
+    img = Image.open(request.files["image"].stream).convert("RGB")
+    img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+    img_np = normalize_chart(img_np)
+
+    text = pytesseract.image_to_string(img_np)
+
+    num = r"([0-9]+\.[0-9]+)"
+
+    entry = re.search(r"Entry\s*[:\-]?\s*" + num, text)
+    sl = re.search(r"(SL|Stop\s*Loss)\s*[:\-]?\s*" + num, text)
+    tp = re.search(r"(TP|Take\s*Profit)\s*[:\-]?\s*" + num, text)
+
+    def g(m): return m.group(2) if m else None
+
+    entry = entry.group(1) if entry else None
+    sl = sl.group(2) if sl else None
+    tp = tp.group(2) if tp else None
+
+    rr = None
+    if entry and sl and tp:
+        try:
+            rr = round(abs(float(tp) - float(entry)) /
+                       abs(float(entry) - float(sl)), 2)
+        except:
+            pass
+
+    return jsonify({
+        "entry": entry,
+        "stop_loss": sl,
+        "take_profit": tp,
+        "risk_reward": rr,
+        "ocr_raw": text
+    })
+
+@app.post("/api/normalize/preview")
+def normalize_preview():
+    if "image" not in request.files:
+        return jsonify({"error": "No file"}), 400
+
+    img = Image.open(request.files["image"]).convert("RGB")
+    img_np = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+    norm = normalize_chart(img_np)
+
+    _, buf = cv2.imencode(".png", norm)
+    b64 = base64.b64encode(buf).decode("utf-8")
+
+    return jsonify({"normalized": b64})
+
+
+# ---------------------------------------------------------
+# References
+# ---------------------------------------------------------
 @app.get("/api/references")
 def get_references():
     label = request.args.get("label", "valid")
-    limit = int(request.args.get("limit", "20"))
-    items = [r for r in REFS if r["label"] == label][:limit]
-    return jsonify({"items": items, "count": len(items)})
+    return jsonify([r for r in REFS if r["label"] == label][:20])
 
 
-# === Model load + predict ===
-def load_model():
-    paths = ["outputs/model.keras", "outputs/model.h5", "outputs/model"]
-    for p in paths:
-        if os.path.exists(p):
-            if TF_OK:
-                return tf.keras.models.load_model(p)
-    return None
-
-
+# ---------------------------------------------------------
+# CNN Model Load
+# ---------------------------------------------------------
 MODEL = None
 MODEL_LOCK = threading.Lock()
 
 
+def load_model():
+    for p in ["outputs/model.keras", "outputs/model.h5"]:
+        if os.path.exists(p):
+            return tf.keras.models.load_model(p)
+    return None
+
+
+# ---------------------------------------------------------
+# Predict
+# ---------------------------------------------------------
 @app.post("/api/predict")
 def predict():
     global MODEL
+
     if "image" not in request.files:
-        return jsonify({"error": "send multipart/form-data with field 'image'"}), 400
-    f = request.files["image"]
-    img_bytes = f.read()
+        return jsonify({"error": "Need image"}), 400
+
+    img_bytes = request.files["image"].read()
 
     with MODEL_LOCK:
         if MODEL is None:
             MODEL = load_model()
 
     if MODEL is None or not TF_OK:
-        guess = random.random()
-        label = "valid" if guess >= 0.5 else "invalid"
-        conf = round(guess if label == 'valid' else 1 - guess, 4)
-        refs = [r for r in REFS if r["label"] == label][:10]
-        return jsonify({"label": label, "confidence": conf, "note": "no model found", "references": refs})
+        rnd = random.random()
+        return jsonify({
+            "label": "valid" if rnd > 0.5 else "invalid",
+            "confidence": round(rnd, 4),
+            "note": "Model missing"
+        })
 
-    img = tf.io.decode_image(img_bytes, channels=3, expand_animations=False)
-    img = tf.image.resize(img, (224, 224)) / 255.0
-    pred = MODEL.predict(tf.expand_dims(img, 0), verbose=0)[0]
-    if pred.shape == () or pred.shape == (1,):
-        p = float(pred.reshape(-1)[0])
-        label = "valid" if p >= 0.5 else "invalid"
-        conf = p if label == "valid" else 1 - p
-    else:
-        p_valid = float(pred[-1])
-        label = "valid" if p_valid >= 0.5 else "invalid"
-        conf = p_valid if label == "valid" else 1 - p_valid
-    refs = [r for r in REFS if r["label"] == label][:10]
-    return jsonify({"label": label, "confidence": round(float(conf), 4), "references": refs})
+    img_raw = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    np_img = cv2.cvtColor(np.array(img_raw), cv2.COLOR_RGB2BGR)
+
+    np_img = normalize_chart(np_img)
+
+    arr = cv2.cvtColor(np_img, cv2.COLOR_BGR2RGB)
+    arr = cv2.resize(arr, (224, 224)) / 255.0
+    arr = np.expand_dims(arr, 0)
+
+    pred = MODEL.predict(arr, verbose=0)[0]
+    p = float(pred[-1]) if len(pred) > 1 else float(pred)
+
+    label = "valid" if p >= 0.5 else "invalid"
+    conf = p if p >= 0.5 else 1 - p
+
+    return jsonify({"label": label, "confidence": round(conf, 4)})
 
 
-# === Simple Vision ===
+# ---------------------------------------------------------
+# Simple Similarity
+# ---------------------------------------------------------
 @app.post("/api/similar")
-def find_similar():
+def simple_similar():
     if "image" not in request.files:
-        return jsonify({"error": "send multipart/form-data with field 'image'"}), 400
-    f = request.files["image"]
-    img = Image.open(f.stream)
-    target_hash = imagehash.phash(img)
+        return jsonify([])
 
-    index_path = os.path.join(os.path.dirname(__file__), "data", "image_index.pkl")
-    if not os.path.exists(index_path):
-        return jsonify({"error": "no image index found; run build_image_index.py first"}), 404
+    img = Image.open(request.files["image"])
+    qh = imagehash.phash(img)
 
-    index = pickle.load(open(index_path, "rb"))
-    results = []
+    index = pickle.load(open("data/image_index.pkl", "rb"))
+
+    out = []
     for item in index:
-        diff = target_hash - item["hash"]
-        results.append((diff, item))
-    results.sort(key=lambda x: x[0])
-    top = []
-    for diff, item in results[:5]:
-        rel_path = os.path.relpath(item["path"], os.path.join(os.path.dirname(__file__), "dataset"))
-        web_path = f"http://127.0.0.1:5000/images/{rel_path.replace(os.sep, '/')}"
-        top.append({
-            "path": web_path,
+        dist = qh - item["hash"]
+        out.append({
+            "path": item["path"],
             "label": item["label"],
-            "distance": int(diff)
+            "distance": float(dist),
+            "mode": "simple"
         })
-    return jsonify(top)
+
+    return jsonify(sorted(out, key=lambda x: x["distance"])[:6])
 
 
-# === Smart Vision (CNN Embedding Similarity) ===
+# ---------------------------------------------------------
+# Smart Similarity
+# ---------------------------------------------------------
 @app.post("/api/similar_smart")
-def find_similar_smart():
-    model_path = os.path.join("outputs", "model.keras")
-    index_path = os.path.join("data", "embedding_index.pkl")
+def smart_similar():
+    if not TF_OK or not os.path.exists("outputs/model.keras"):
+        return jsonify([])
 
-    if not os.path.exists(model_path):
-        return jsonify({"error": "model.keras not found"}), 404
-    if not os.path.exists(index_path):
-        return jsonify({"error": "embedding_index.pkl not found"}), 404
+    model = tf.keras.models.load_model("outputs/model.keras")
+    embedder = tf.keras.Model(inputs=model.input, outputs=model.layers[-2].output)
 
-    # --- Load model and embedder ---
-    try:
-        model = tf.keras.models.load_model(model_path)
-        # Ensure model is built before accessing .input
-        if not hasattr(model, "inputs"):
-            dummy = tf.zeros((1, 224, 224, 3))
-            model(dummy, training=False)
-        embedder = tf.keras.Model(inputs=model.input, outputs=model.layers[-2].output)
-    except Exception as e:
-        return jsonify({"error": f"failed to load model: {e}"}), 500
+    index = pickle.load(open("data/embedding_index.pkl", "rb"))
 
-    data = pickle.load(open(index_path, "rb"))
+    img = Image.open(request.files["image"]).convert("RGB")
+    arr = np.array(img.resize((224, 224))) / 255.0
+    emb = embedder.predict(np.expand_dims(arr, 0), verbose=0)[0]
 
-    if "image" not in request.files:
-        return jsonify({"error": "send multipart/form-data with field 'image'"}), 400
-
-    # --- Preprocess image (force RGB) ---
-    f = request.files["image"]
-    img = Image.open(f.stream).convert("RGB").resize((224, 224))
-    arr = np.expand_dims(np.array(img) / 255.0, 0)
-    emb = embedder.predict(arr, verbose=0)[0]
-
-    # --- Compute distances ---
-    results = []
-    for item in data:
-        dist = np.linalg.norm(emb - item["embedding"])
-        results.append((dist, item))
-    results.sort(key=lambda x: x[0])
-
-    # --- Build clean web paths ---
-    top = []
-    for dist, item in results[:5]:
-        rel_path = os.path.relpath(item["path"], os.path.join(os.path.dirname(__file__), "dataset"))
-        web_path = f"http://127.0.0.1:5000/images/{rel_path.replace(os.sep, '/')}"
-        top.append({
-            "path": web_path,
-            "label": item["label"].upper(),
-            "distance": round(float(dist), 4)
+    out = []
+    for it in index:
+        dist = np.linalg.norm(emb - it["embedding"])
+        out.append({
+            "path": it["path"],
+            "label": it["label"],
+            "distance": float(dist),
+            "mode": "smart"
         })
 
-    print("✅ Top matches:")
-    for t in top:
-        print(f"  • {t['label']}  ({t['distance']})  →  {t['path']}")
-
-    return jsonify(top)
+    return jsonify(sorted(out, key=lambda x: x["distance"])[:6])
 
 
+# ---------------------------------------------------------
+# Training Endpoints
+# ---------------------------------------------------------
+@app.post("/api/train/start")
+def train_start():
+    if TRAIN_STATUS["running"]:
+        return jsonify({"error": "already running"}), 400
 
-# === Serve Dataset Images ===
+    t = threading.Thread(target=training_thread, daemon=True)
+    t.start()
+
+    return jsonify({"message": "training started"})
+
+
+@app.get("/api/train/status")
+def train_status():
+    return jsonify(TRAIN_STATUS)
+
+
+@app.get("/api/train/history")
+def train_history():
+    return jsonify(TRAIN_STATUS["history"])
+
+def rebuild_image_hash_index():
+    print("🔄 Rebuilding simple hash index...")
+
+    index = []
+    for root, dirs, files in os.walk("dataset"):
+        for f in files:
+            if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                path = os.path.join(root, f)
+                try:
+                    img = Image.open(path)
+                    h = imagehash.phash(img)
+                    label = "valid" if "valid" in root else "invalid"
+                    index.append({"path": path, "label": label, "hash": h})
+                except:
+                    pass
+
+    pickle.dump(index, open("data/image_index.pkl", "wb"))
+    print(f"✅ Hash index built ({len(index)} items)")
+
+
+def rebuild_embedding_index():
+    print("🔄 Rebuilding CNN embedding index...")
+
+    if not TF_OK:
+        print("⚠ TensorFlow unavailable — skipping embed index")
+        return
+
+    try:
+        model = tf.keras.models.load_model("outputs/model.keras")
+        embedder = tf.keras.Model(
+            inputs=model.input,
+            outputs=model.layers[-2].output
+        )
+    except:
+        print("⚠ No model found")
+        return
+
+    items = []
+    for root, dirs, files in os.walk("dataset"):
+        for f in files:
+            if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                path = os.path.join(root, f)
+                img = Image.open(path).convert("RGB")
+                arr = np.array(img.resize((224, 224))) / 255.0
+
+                emb = embedder.predict(
+                    np.expand_dims(arr, 0), verbose=0
+                )[0]
+
+                label = "valid" if "valid" in root else "invalid"
+
+                items.append({
+                    "path": path,
+                    "embedding": emb,
+                    "label": label
+                })
+
+    pickle.dump(items, open("data/embedding_index.pkl", "wb"))
+    print(f"✅ Embedding index built ({len(items)} items)")
+
+@app.post("/api/dataset/upload")
+def dataset_upload():
+    if "image" not in request.files:
+        return jsonify({"error": "No image"}), 400
+
+    img = request.files["image"]
+    label = request.form.get("label", "valid")
+
+    label_folder = "valid_setup" if label == "valid" else "invalid_setup"
+    save_dir = os.path.join("dataset", label_folder)
+    os.makedirs(save_dir, exist_ok=True)
+
+    # save file
+    filename = f"{int(time.time())}_{img.filename}"
+    save_path = os.path.join(save_dir, filename)
+    img.save(save_path)
+
+    # update REFS.csv automatically
+    with open(SETUPS_CSV, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([save_path, label])
+
+    # rebuild image hash index
+    try:
+        rebuild_image_hash_index()
+    except:
+        print("⚠ Could not rebuild hash index")
+
+    # rebuild CNN embedding index (optional)
+    try:
+        rebuild_embedding_index()
+    except:
+        print("⚠ Could not rebuild CNN embedding index")
+
+    load_reference_setups()  # refresh live memory
+
+    return jsonify({
+        "message": f"Uploaded to {label_folder}",
+        "path": save_path
+    })
+
+# ---------------------------------------------------------
+# Dataset Cleaner
+# ---------------------------------------------------------
+@app.post("/api/cleaner/scan")
+def cleaner_scan():
+    folder = "dataset"
+    out = []
+
+    for root, dirs, files in os.walk(folder):
+        for f in files:
+            if f.lower().endswith((".png", ".jpg", ".jpeg")):
+                out.append(os.path.join(root, f))
+
+    return jsonify({"count": len(out), "items": out})
+
+
+
+# ---------------------------------------------------------
+# Serve Dataset Images
+# ---------------------------------------------------------
 @app.route("/images/<path:filename>")
 def serve_image(filename):
-    dataset_dir = os.path.join(os.path.dirname(__file__), "dataset")
-    return send_from_directory(dataset_dir, filename)
+    return send_from_directory("dataset", filename)
 
 
-
-# === Demo Bot ===
-SYMS = ["AAPL", "TSLA", "NVDA", "MSFT", "ETH-USD", "BTC-USD", "EURUSD", "GBPUSD"]
-BOT_RUNNING = False
-
-
-def demo_alerts():
-    global BOT_RUNNING
-    while True:
-        time.sleep(random.randint(10, 20))
-        if not BOT_RUNNING:
-            continue
-        s = Signal(
-            id=str(time.time_ns()),
-            symbol=random.choice(SYMS),
-            timeframe=random.choice(["5m", "15m", "1h", "4h", "1D"]),
-            direction=random.choice(["LONG", "SHORT"]),
-            confidence=random.uniform(0.65, 0.98),
-            openedAt=time.time(),
-        )
-        STATE["signals"].insert(0, s)
-        s_dict = asdict(s)
-        save_signal_db(s_dict)
-        publish_alert({"type": "signal", "signal": s_dict})
-        STATE["summary"]["activeSignals"] = len(STATE["signals"])
-        STATE["summary"]["signalsToday"] += 1
-
-
-@app.post("/api/bot/start")
-def start_bot():
-    global BOT_RUNNING
-    BOT_RUNNING = True
-    return jsonify({"message": "Bot started"})
-
-
-@app.post("/api/bot/stop")
-def stop_bot():
-    global BOT_RUNNING
-    BOT_RUNNING = False
-    return jsonify({"message": "Bot stopped"})
-
-
-# === MAIN ===
+# ---------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------
 if __name__ == "__main__":
     init_db()
     load_reference_setups()
-    threading.Thread(target=demo_alerts, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

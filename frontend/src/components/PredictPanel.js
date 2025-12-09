@@ -1,328 +1,286 @@
+// src/components/PredictPanel.js
 import React, { useState } from "react";
-import { FaInfoCircle } from "react-icons/fa";
-import ComparisonPanel from "./ComparisonPanel";
+import axios from "axios";
+
+import LevelsModal from "./LevelsModal";
+import RuleAdvisor from "./RuleAdvisor";
+import RiskAdvisor from "./RiskAdvisor";
+import { FaCopy } from "react-icons/fa";
+
+
+import { useLang } from "../lang/LanguageContext";
+import { useAccent } from "../context/AccentContext";
+import { useAuth } from "../auth/AuthContext";
 
 export default function PredictPanel() {
-  const [file, setFile] = useState(null);
-  const [prediction, setPrediction] = useState(null);
+const BACKEND = "https://timfx1-api.onrender.com";
+
+  const { strings } = useLang();
+  const { accent } = useAccent();
+  const { user } = useAuth();
+
+  // UI State
+  const [image, setImage] = useState(null);
+  const [preview, setPreview] = useState(null);
+
+  // Backend results
+  const [cnnResult, setCnnResult] = useState(null);
+  const [similar, setSimilar] = useState([]);
+  const [llmLabel, setLlmLabel] = useState(null);
+  const [levels, setLevels] = useState(null);
+
+  // Modal
+  const [showLevels, setShowLevels] = useState(false);
+
+  // Other
   const [loading, setLoading] = useState(false);
-  const [comparisons, setComparisons] = useState([]);
-  const [mode, setMode] = useState("simple"); // 'simple' | 'smart' | 'hybrid'
-  const [showInfo, setShowInfo] = useState(false);
-  const [infoMode, setInfoMode] = useState("simple"); // which info box to show
+  const [mode, setMode] = useState("hybrid");
+  const [copyMsg, setCopyMsg] = useState("");
 
-  const infoText = {
-    simple: {
-      title: "Simple Vision",
-      desc: `Uses perceptual image hashes to compare your upload
-to past setups.\n\nGood for:\n• Very similar screenshots\n• Same template / colors / zoom\n• Quick lightweight comparisons`,
-    },
-    smart: {
-      title: "Smart Vision (CNN)",
-      desc: `Uses deep-learning embeddings from your trained CNN model
-to compare market structure, not just pixels.\n\nGood for:\n• Different zoom levels\n• Slightly different templates\n• Structural pattern similarity (swings, legs, context)`,
-    },
-    hybrid: {
-      title: "Hybrid Vision",
-      desc: `Combines Simple + Smart Vision.\n\nBehaviour:\n• Calls both comparison engines\n• Merges and ranks matches\n• Gives you both “looks like the same screenshot” AND “behaves like similar structure”.\n\nBest when you want a full picture.`,
-    },
+  // --------------------------
+  // File handler
+  // --------------------------
+  const handleFile = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setImage(f);
+    setPreview(URL.createObjectURL(f));
   };
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0] || null);
-    setPrediction(null);
-    setComparisons([]);
+  // --------------------------
+  // Clean backend Windows path
+  // --------------------------
+  const cleanPath = (raw) => {
+    if (!raw) return "";
+    const BASE = `${BACKEND}/images/`;
+    let p = raw.replace(/\\/g, "/");
+    p = p.replace(/^.*dataset\//, "");
+    return BASE + p;
   };
 
-  // Helpers to call backend
-  const callPredict = async () => {
-    const formData = new FormData();
-    formData.append("image", file);
-    const res = await fetch("http://127.0.0.1:5000/api/predict", {
-      method: "POST",
-      body: formData,
-    });
-    return res.json();
-  };
+  // --------------------------
+  // Save analysis to history
+  // --------------------------
+  const saveResult = () => {
+    if (!cnnResult) return;
 
-  const callSimilarSimple = async () => {
-    const formData = new FormData();
-    formData.append("image", file);
-    const res = await fetch("http://127.0.0.1:5000/api/similar", {
-      method: "POST",
-      body: formData,
-    });
-    return res.json();
-  };
-
-  const callSimilarSmart = async () => {
-    const formData = new FormData();
-    formData.append("image", file);
-    const res = await fetch("http://127.0.0.1:5000/api/similar_smart", {
-      method: "POST",
-      body: formData,
-    });
-    return res.json();
-  };
-
-  const normalizeSimple = (arr) =>
-    (arr || []).map((x) => {
-      const dist = typeof x.distance === "number" ? x.distance : 0;
-      const sim = 1 / (1 + dist); // turn distance into 0–1 similarity
-      return {
-        path: x.path || x.url || "",
-        label: x.label || "unknown",
-        similarity: sim,
-        source: "simple",
-      };
-    });
-
-  const normalizeSmart = (arr) =>
-    (arr || []).map((x) => {
-      const dist = typeof x.distance === "number" ? x.distance : 0;
-      const sim = 1 / (1 + dist);
-      return {
-        path: x.path || x.url || "",
-        label: x.label || "unknown",
-        similarity: sim,
-        source: "smart",
-      };
-    });
-
-  const handleSubmit = async () => {
-    if (!file) {
-      alert("Please upload a chart image first.");
+    if (!user) {
+      alert("You must be logged in to save history.");
       return;
     }
 
+    const entry = {
+      id: Date.now(),
+      image: preview,
+      label: cnnResult.label,
+      confidence: cnnResult.confidence,
+      date: new Date().toLocaleString(),
+    };
+
+    const existing = JSON.parse(localStorage.getItem("timfx1_history") || "[]");
+    existing.unshift(entry);
+
+    localStorage.setItem("timfx1_history", JSON.stringify(existing));
+
+    alert("Saved to your history!");
+  };
+
+  // --------------------------
+  // Copy helper
+  // --------------------------
+  const copyText = (txt) => {
+    navigator.clipboard.writeText(txt);
+    setCopyMsg(`Copied: ${txt}`);
+    setTimeout(() => setCopyMsg(""), 1200);
+  };
+
+  // --------------------------
+  // RUN FULL ANALYSIS
+  // --------------------------
+  const runAnalysis = async () => {
+    if (!image) return alert(strings.upload);
+
     setLoading(true);
-    setPrediction(null);
-    setComparisons([]);
+    setCnnResult(null);
+    setSimilar([]);
+    setLlmLabel(null);
+    setLevels(null);
+
+    const form = new FormData();
+    form.append("image", image);
 
     try {
-      // 1) Always get a prediction from /api/predict
-      const predData = await callPredict();
-      setPrediction(predData);
+      // 🔹 CNN
+      const cnn = await axios.post(`${BACKEND}/api/predict`, form);
+      setCnnResult(cnn.data);
 
-      // 2) Decide which comparison engines to use
-      let allComparisons = [];
+      // 🔹 Similar sets
+      const simple = await axios.post(`${BACKEND}/api/similar`, form);
+      const smart = await axios.post(`${BACKEND}/api/similar_smart`, form);
 
-      if (mode === "simple" || mode === "hybrid") {
-        try {
-          const simpleData = await callSimilarSimple();
-          const simpleNorm = normalizeSimple(simpleData);
-          allComparisons = allComparisons.concat(simpleNorm);
-        } catch (e) {
-          console.error("Simple Vision failed:", e);
-        }
+      let combined = [];
+
+      if (mode === "simple") combined = simple.data;
+      else if (mode === "smart") combined = smart.data;
+      else {
+        combined = [...simple.data, ...smart.data]
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 8);
       }
 
-      if (mode === "smart" || mode === "hybrid") {
-        try {
-          const smartData = await callSimilarSmart();
-          const smartNorm = normalizeSmart(smartData);
-          allComparisons = allComparisons.concat(smartNorm);
-        } catch (e) {
-          console.error("Smart Vision failed:", e);
-        }
-      }
+      combined = combined.map((x) => ({ ...x, path: cleanPath(x.path) }));
+      setSimilar(combined);
 
-      // Fallback if nothing selected (shouldn't happen, but safe)
-      if (!mode && allComparisons.length === 0) {
-        const simpleData = await callSimilarSimple();
-        allComparisons = normalizeSimple(simpleData);
-      }
+      // 🔹 LLM Label
+      const llm = await axios.post(`${BACKEND}/api/llm/label`, form);
+      setLlmLabel(llm.data);
 
-      // Sort by similarity desc and take top 6
-      allComparisons.sort((a, b) => b.similarity - a.similarity);
-      setComparisons(allComparisons.slice(0, 6));
+      // 🔹 Levels (SL/TP)
+      const lvl = await axios.post(`${BACKEND}/api/extract_levels`, form);
+      setLevels(lvl.data);
+
+      setShowLevels(true);
+
     } catch (err) {
       console.error(err);
-      alert("Prediction or comparison failed — check backend connection.");
-    } finally {
-      setLoading(false);
+      alert("Backend error. Check terminal.");
     }
+
+    setLoading(false);
   };
 
-  const handleModeClick = (newMode) => {
-    setMode(newMode);
-  };
-
-  const openInfo = (m) => {
-    setInfoMode(m);
-    setShowInfo(true);
-  };
-
+  // ============================================================
+  // UI
+  // ============================================================
   return (
-    <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-6 rounded-3xl shadow-xl text-white mt-6">
-      <h2 className="text-2xl font-semibold text-teal-300 mb-2">
-        Pattern Prediction & Comparisons
-      </h2>
-      <p className="text-sm text-white/70 mb-4">
-        Upload a chart, choose how you want the AI to “see” it, and compare
-        your setup to real, labeled examples from your own trading log.
-      </p>
+    <div className="glass p-6 rounded-2xl w-full max-w-3xl shadow-xl">
 
-      {/* Vision Mode Selector */}
-      <div className="mb-5 p-3 rounded-2xl bg-black/30 border border-white/10">
-        <p className="text-xs uppercase tracking-wide text-white/50 mb-2">
-          Vision Mode
-        </p>
-        <div className="flex flex-wrap gap-3 items-center">
-          {/* Simple Vision */}
-          <button
-            type="button"
-            onClick={() => handleModeClick("simple")}
-            className={`px-3 py-1.5 rounded-full text-sm flex items-center gap-2 border transition 
-              ${
-                mode === "simple"
-                  ? "bg-emerald-500/80 border-emerald-300 shadow-lg"
-                  : "bg-white/5 border-white/20 hover:bg-white/10"
-              }`}
-          >
-            <span>Simple Vision</span>
-            <FaInfoCircle
-              className="cursor-pointer text-xs opacity-80 hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                openInfo("simple");
-              }}
-            />
-          </button>
+      <h2 className="text-xl font-bold mb-4 title">{strings.upload}</h2>
 
-          {/* Smart Vision */}
-          <button
-            type="button"
-            onClick={() => handleModeClick("smart")}
-            className={`px-3 py-1.5 rounded-full text-sm flex items-center gap-2 border transition 
-              ${
-                mode === "smart"
-                  ? "bg-sky-500/80 border-sky-300 shadow-lg"
-                  : "bg-white/5 border-white/20 hover:bg-white/10"
-              }`}
-          >
-            <span>Smart Vision</span>
-            <FaInfoCircle
-              className="cursor-pointer text-xs opacity-80 hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                openInfo("smart");
-              }}
-            />
-          </button>
+      {/* Upload */}
+      <input type="file" accept="image/*" onChange={handleFile} />
 
-          {/* Hybrid Vision */}
-          <button
-            type="button"
-            onClick={() => handleModeClick("hybrid")}
-            className={`px-3 py-1.5 rounded-full text-sm flex items-center gap-2 border transition 
-              ${
-                mode === "hybrid"
-                  ? "bg-purple-500/80 border-purple-300 shadow-lg"
-                  : "bg-white/5 border-white/20 hover:bg-white/10"
-              }`}
-          >
-            <span>Hybrid Vision</span>
-            <FaInfoCircle
-              className="cursor-pointer text-xs opacity-80 hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                openInfo("hybrid");
-              }}
-            />
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-white/60">
-          Tip: Simple is fast & screenshot-focused, Smart is pattern-focused, Hybrid
-          combines both.
-        </p>
-      </div>
-
-      {/* Upload + Predict Button */}
-      <div className="flex flex-col md:flex-row items-center gap-4">
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          className="text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0
-                     file:text-sm file:font-semibold file:bg-teal-600 file:text-white hover:file:bg-teal-700"
+      {preview && (
+        <img
+          src={preview}
+          className="mt-3 rounded-xl border border-white/10 max-h-56 object-contain"
         />
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="bg-teal-500 hover:bg-teal-600 disabled:bg-teal-800/60 transition px-5 py-2 rounded-full font-medium text-white shadow-md"
-        >
-          {loading ? "Analyzing setup..." : "Run Analysis"}
-        </button>
+      )}
+
+      {/* Mode Switch */}
+      <div className="mt-4 flex gap-3">
+        {["simple", "smart", "hybrid"].map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            style={{ borderColor: "var(--accent)" }}
+            className={`px-3 py-1.5 rounded-full text-sm border ${
+              mode === m ? "btn-accent text-black" : "btn-accent-outline"
+            }`}
+          >
+            {m.toUpperCase()}
+          </button>
+        ))}
       </div>
 
-      {/* Preview */}
-      {file && (
-        <div className="mt-5 flex flex-col md:flex-row gap-6">
-          <div className="md:w-1/2">
-            <p className="text-sm text-white/60 mb-2">Uploaded chart preview</p>
-            <img
-              src={URL.createObjectURL(file)}
-              alt="Preview"
-              className="w-full max-w-lg rounded-2xl shadow-lg border border-white/10"
-            />
-          </div>
+      {/* Run Button */}
+      <button
+        onClick={runAnalysis}
+        disabled={loading}
+        className="btn-accent px-5 py-2 rounded-xl mt-4"
+      >
+        {loading ? "Analyzing…" : strings.analyze}
+      </button>
 
-          {/* Prediction Result */}
-          {prediction && (
-            <div className="md:w-1/2 mt-4 md:mt-0">
-              <div className="p-4 bg-white/10 rounded-2xl border border-white/20 text-center h-full flex flex-col justify-center">
-                <h3 className="text-lg text-teal-200 font-semibold mb-2">
-                  Prediction Result
-                </h3>
-                <p className="text-xl mb-1">
-                  {prediction.label === "valid" ? (
-                    <span className="text-green-400 font-bold">
-                      ✅ Valid Setup
-                    </span>
-                  ) : (
-                    <span className="text-red-400 font-bold">
-                      ❌ Invalid Setup
-                    </span>
-                  )}
-                </p>
-                <p className="text-sm text-gray-200">
-                  Confidence:{" "}
-                  {(prediction.confidence * 100).toFixed(2)}%
-                </p>
-                {prediction.note && (
-                  <p className="text-xs text-amber-200 mt-2">
-                    Note: {prediction.note}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+      {cnnResult && (
+        <button
+          onClick={saveResult}
+          className="btn-accent-outline ml-3 px-4 py-2 rounded-xl"
+        >
+          {strings.save}
+        </button>
+      )}
+
+      {/* Copy popup */}
+      {copyMsg && (
+        <div className="fixed bottom-8 right-8 glass px-4 py-2 rounded-xl text-sm">
+          {copyMsg}
         </div>
       )}
 
-      {/* Comparisons */}
-      <ComparisonPanel comparisons={comparisons} activeMode={mode} />
+      {/* -----------------------------
+          CNN RESULT PANEL
+      ------------------------------ */}
+      {cnnResult && (
+        <div className="mt-6 p-4 glass rounded-xl">
 
-      {/* Info modal */}
-      {showInfo && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-md">
-          <div className="bg-slate-900/90 border border-white/20 rounded-2xl p-5 w-[90%] max-w-md text-sm text-white relative">
-            <h3 className="text-lg font-semibold text-teal-300 mb-2">
-              {infoText[infoMode].title}
-            </h3>
-            <p className="whitespace-pre-line text-white/80">
-              {infoText[infoMode].desc}
-            </p>
-            <button
-              onClick={() => setShowInfo(false)}
-              className="mt-4 px-4 py-1.5 rounded-full bg-teal-500 hover:bg-teal-600 text-sm font-medium"
-            >
-              Close
-            </button>
-          </div>
+          <h3 className="title text-lg mb-1">CNN Prediction</h3>
+
+         <div className="flex items-center gap-2">
+  <span>Label: {cnnResult.label}</span>
+  <RuleAdvisor result={cnnResult} />
+</div>
+
+
+          <p>Confidence: {(cnnResult.confidence * 100).toFixed(1)}%</p>
+
+          {/* RISK ADVISOR */}
+          <RiskAdvisor result={cnnResult} />
         </div>
       )}
+
+      {/* -----------------------------
+          LLM RESULT
+      ------------------------------ */}
+      {llmLabel && (
+  <div className="mt-4 p-4 glass rounded-xl relative">
+
+    <h3 className="title text-lg flex justify-between items-center">
+      {strings.patternInsight}
+
+      {/* COPY SUMMARY BUTTON */}
+      <button
+        onClick={() => copyText(llmLabel.reason)}
+        className="text-xs px-3 py-1 flex items-center gap-2 bg-white/10 border border-white/20 rounded-lg hover:bg-white/20"
+      >
+        <FaCopy size={12} /> Copy
+      </button>
+    </h3>
+
+    <p className="mt-2"><b>Pattern:</b> {llmLabel.pattern}</p>
+    <p className="text-sm opacity-75 whitespace-pre-line mt-1">{llmLabel.reason}</p>
+  </div>
+)}
+
+      {levels && (
+  <div className="mt-4 p-4 glass rounded-xl">
+    <h3 className="title text-lg mb-2">SL / TP Levels</h3>
+
+    <p className="text-sm opacity-80">SL: {levels.sl}</p>
+    <p className="text-sm opacity-80">TP1: {levels.tp1}</p>
+    <p className="text-sm opacity-80">TP2: {levels.tp2}</p>
+
+    <button
+      onClick={() =>
+        copyText(`SL: ${levels.sl}, TP1: ${levels.tp1}, TP2: ${levels.tp2}`)
+      }
+      className="btn-accent-outline px-4 py-2 mt-3 rounded-lg"
+    >
+      Copy Levels
+    </button>
+  </div>
+)}
+
+
+      {/* -----------------------------
+          SL/TP MODAL
+      ------------------------------ */}
+      <LevelsModal
+        show={showLevels}
+        onClose={() => setShowLevels(false)}
+        levels={levels}
+        copyText={copyText}
+      />
     </div>
   );
 }

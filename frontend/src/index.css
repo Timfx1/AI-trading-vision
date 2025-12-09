@@ -1,39 +1,65 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ===== DEFAULT DARK MODE + ACCENT SYSTEM ===== */
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --text: #e6edf3;
+  --accent: #0dd6b8; /* default teal */
+  --accent-light: rgba(13, 214, 184, 0.15);
+}
+
 * {
-  transition: all 0.2s ease-in-out;
+  transition: all 0.25s ease;
 }
+
 body {
-  @apply min-h-screen text-white font-sans;
-  background: radial-gradient(ellipse at top, #0f2027, #203a43, #2c5364);
-  color: white;
-  background-size: 400% 400%;
-  animation: gradientShift 15s ease infinite;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
 }
 
-@keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
+/* GLASS PANELS */
 .glass {
-  @apply bg-white/10 border border-white/20 backdrop-blur-md shadow-lg rounded-xl;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
 }
 
-input, button {
-  @apply focus:outline-none;
+/* ACCENT BUTTON STYLE */
+.btn-accent {
+  background: var(--accent);
+  color: black;
+  font-weight: 600;
 }
-html {
-  scroll-behavior: smooth;
-}
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 10px rgba(20, 184, 166, 0.6); }
-  50% { box-shadow: 0 0 25px rgba(20, 184, 166, 0.9); }
-}
-
-button.fixed.bottom-6.right-6 {
-  animation: pulse-glow 2.5s infinite;
+.btn-accent:hover {
+  opacity: 0.85;
 }
 
+/* ACCENT OUTLINE BUTTON */
+.btn-accent-outline {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.btn-accent-outline:hover {
+  background: var(--accent-light);
+}
+
+/* HEADERS */
+.title {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Image zoom modal */
+.modal-bg {
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(8px);
+}
+
+/* Disable tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
