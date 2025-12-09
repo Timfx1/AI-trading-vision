@@ -5,3 +5,5 @@ matplotlib>=3.5
 selenium>=4.10
 webdriver-manager>=4.0
 pillow>=10.0
+gunicorn
+
