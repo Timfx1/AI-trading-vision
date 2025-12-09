@@ -111,8 +111,18 @@ const BACKEND = "https://timfx1-api.onrender.com";
 
     try {
       // 🔹 CNN
-      const cnn = await axios.post(`${BACKEND}/api/predict`, form);
-      setCnnResult(cnn.data);
+      // Wake backend (HuggingFace goes to sleep)
+await fetch(BACKEND);
+
+const cnn = await axios.post(
+    `${BACKEND}/api/llm/label`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+);
+
+// Save results
+setCnnResult(cnn.data);
+
 
       // 🔹 Similar sets
       const simple = await axios.post(`${BACKEND}/api/similar`, form);
