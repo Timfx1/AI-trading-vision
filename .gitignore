@@ -34,3 +34,8 @@ backend/data/*.pkl
 backend/signals.db
 *.keras
 
+# Ignore local environment files
+backend/.env
+frontend/.env
+
+
