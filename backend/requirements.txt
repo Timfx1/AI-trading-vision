@@ -2,10 +2,9 @@ flask
 flask-cors
 gunicorn
 opencv-python-headless
-numpy
+numpy==1.23.5
 pillow
 imagehash
 pytesseract
-tensorflow==2.12
 python-dotenv
 deepseek

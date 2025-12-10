@@ -32,18 +32,37 @@ TF_OK = False   # You disabled TensorFlow earlier
 # --------------------------
 # Simulated CNN predict
 # --------------------------
+# @app.post("/api/predict")
+# def predict():
+#     if "image" not in request.files:
+#         return jsonify({"error": "Need image"}), 400
+
+#     # Since ML is removed, generate a fake prediction
+#     p = random.random()
+
+#     return jsonify({
+#         "label": "valid" if p > 0.5 else "invalid",
+#         "confidence": round(p if p > 0.5 else 1 - p, 4)
+#     })
+
 @app.post("/api/predict")
 def predict():
     if "image" not in request.files:
         return jsonify({"error": "Need image"}), 400
 
-    # Since ML is removed, generate a fake prediction
-    p = random.random()
+    # Since TensorFlow is not running on Render,
+    # we return a dummy prediction so the frontend works.
+
+    import random
+    conf = round(random.uniform(0.55, 0.95), 3)
+    label = "valid" if random.random() > 0.5 else "invalid"
 
     return jsonify({
-        "label": "valid" if p > 0.5 else "invalid",
-        "confidence": round(p if p > 0.5 else 1 - p, 4)
+        "label": label,
+        "confidence": conf,
+        "note": "TensorFlow model not loaded (Render does not support TF)"
     })
+
 
 
 # --------------------------
