@@ -98,13 +98,13 @@ def llm_label():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.post("/api/llm/label")
-def llm_label():
-    # Return dummy response for now
-    return jsonify({
-        "pattern": "Bullish Flag Pattern",
-        "reason": "Pattern: Bullish Flag\nTrend: Upward\nEntry Logic: Break above resistance\nRisk: Medium\nGrade: B"
-    })
+# @app.post("/api/llm/label")
+# def llm_label():
+#     # Return dummy response for now
+#     return jsonify({
+#         "pattern": "Bullish Flag Pattern",
+#         "reason": "Pattern: Bullish Flag\nTrend: Upward\nEntry Logic: Break above resistance\nRisk: Medium\nGrade: B"
+#     })
 
 
 # --------------------------
