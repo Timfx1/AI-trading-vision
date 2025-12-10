@@ -29,9 +29,6 @@ const BACKEND = "https://ai-trading-vision-1.onrender.com";
   const [llmLabel, setLlmLabel] = useState(null);
   const [levels, setLevels] = useState(null);
 
-  // Modal
-  const [showLevels, setShowLevels] = useState(false);
-
   // Other
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("hybrid");
@@ -141,7 +138,7 @@ const BACKEND = "https://ai-trading-vision-1.onrender.com";
   const lvl = await axios.post(`${BACKEND}/api/extract_levels`, form);
   setLevels(lvl.data);
 
-  setShowLevels(true);
+
 
 } catch (err) {
   console.error(err);
@@ -275,15 +272,7 @@ const BACKEND = "https://ai-trading-vision-1.onrender.com";
 )}
 
 
-      {/* -----------------------------
-          SL/TP MODAL
-      ------------------------------ */}
-      <LevelsModal
-        show={showLevels}
-        onClose={() => setShowLevels(false)}
-        levels={levels}
-        copyText={copyText}
-      />
+    
     </div>
   );
 }
