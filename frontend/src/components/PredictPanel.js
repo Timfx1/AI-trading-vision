@@ -110,51 +110,44 @@ const BACKEND = "https://timfx1-ai-backend.hf.space";
     form.append("image", image);
 
     try {
-      // 🔹 CNN
-      // Wake backend (HuggingFace goes to sleep)
-await fetch(BACKEND);
+  // Wake HuggingFace (prevents cold start delay)
+  await fetch(BACKEND);
 
-const cnn = await axios.post(
-    `${BACKEND}/api/llm/label`,
+  // 1) CNN prediction
+  const cnn = await axios.post(
+    `${BACKEND}/api/predict`,
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
-);
+  );
+  setCnnResult(cnn.data);
 
-// Save results
-setCnnResult(cnn.data);
+  // 2) Similar image search
+  const simple = await axios.post(`${BACKEND}/api/similar`, form);
+  const smart = await axios.post(`${BACKEND}/api/similar_smart`, form);
 
+  let combined = [];
+  if (mode === "simple") combined = simple.data;
+  else if (mode === "smart") combined = smart.data;
+  else {
+    combined = [...simple.data, ...smart.data]
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 8);
+  }
 
-      // 🔹 Similar sets
-      const simple = await axios.post(`${BACKEND}/api/similar`, form);
-      const smart = await axios.post(`${BACKEND}/api/similar_smart`, form);
+  combined = combined.map((x) => ({ ...x, path: cleanPath(x.path) }));
+  setSimilar(combined);
 
-      let combined = [];
+  // 3) SL/TP Levels
+  const lvl = await axios.post(`${BACKEND}/api/extract_levels`, form);
+  setLevels(lvl.data);
 
-      if (mode === "simple") combined = simple.data;
-      else if (mode === "smart") combined = smart.data;
-      else {
-        combined = [...simple.data, ...smart.data]
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 8);
-      }
+  setShowLevels(true);
 
-      combined = combined.map((x) => ({ ...x, path: cleanPath(x.path) }));
-      setSimilar(combined);
+} catch (err) {
+  console.error(err);
+  alert("Backend error. Check terminal.");
+}
 
-      // 🔹 LLM Label
-      const llm = await axios.post(`${BACKEND}/api/llm/label`, form);
-      setLlmLabel(llm.data);
-
-      // 🔹 Levels (SL/TP)
-      const lvl = await axios.post(`${BACKEND}/api/extract_levels`, form);
-      setLevels(lvl.data);
-
-      setShowLevels(true);
-
-    } catch (err) {
-      console.error(err);
-      alert("Backend error. Check terminal.");
-    }
 
     setLoading(false);
   };
