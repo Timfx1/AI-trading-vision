@@ -13,8 +13,8 @@ from PIL import Image
 # --------------------------
 # DeepSeek API
 # --------------------------
-from deepseek import DeepSeekAPI
-deep_client = DeepSeekAPI(api_key=os.getenv("DEEPSEEK_API_KEY"))
+# from deepseek import DeepSeekAPI
+# deep_client = DeepSeekAPI(api_key=os.getenv("DEEPSEEK_API_KEY"))
 
 # --------------------------
 # FLASK INIT
@@ -97,6 +97,14 @@ def predict():
 
 #     except Exception as e:
 #         return jsonify({"error": str(e)}), 500
+
+@app.post("/api/llm/label")
+def llm_label():
+    # Return dummy response for now
+    return jsonify({
+        "pattern": "Bullish Flag Pattern",
+        "reason": "Pattern: Bullish Flag\nTrend: Upward\nEntry Logic: Break above resistance\nRisk: Medium\nGrade: B"
+    })
 
 
 # --------------------------
