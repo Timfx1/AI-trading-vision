@@ -13,7 +13,7 @@ import { useAccent } from "../context/AccentContext";
 import { useAuth } from "../auth/AuthContext";
 
 export default function PredictPanel() {
-const BACKEND = "process.env.REACT_APP_BACKEND_URL";
+const BACKEND = "https://ai-trading-vision-1.onrender.com";
 
   const { strings } = useLang();
   const { accent } = useAccent();
@@ -111,7 +111,7 @@ const BACKEND = "process.env.REACT_APP_BACKEND_URL";
 
     try {
   // Wake HuggingFace (prevents cold start delay)
-  await fetch(BACKEND);
+// await fetch(BACKEND + "/", { method: "GET" });
 
   // 1) CNN prediction
   const cnn = await axios.post(
