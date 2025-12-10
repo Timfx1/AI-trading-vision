@@ -3,6 +3,7 @@ import io
 import base64
 import random
 import threading
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
@@ -22,63 +23,47 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --------------------------
-# Dummy ML MODEL (placeholder)
+# Dummy ML model (TensorFlow removed)
 # --------------------------
 MODEL = None
 MODEL_LOCK = threading.Lock()
-TF_OK = False   # You disabled TensorFlow earlier
+TF_OK = False  # No TensorFlow on Render
 
 
 # --------------------------
-# Simulated CNN predict
+# /api/predict  (dummy)
 # --------------------------
-# @app.post("/api/predict")
-# def predict():
-#     if "image" not in request.files:
-#         return jsonify({"error": "Need image"}), 400
-
-#     # Since ML is removed, generate a fake prediction
-#     p = random.random()
-
-#     return jsonify({
-#         "label": "valid" if p > 0.5 else "invalid",
-#         "confidence": round(p if p > 0.5 else 1 - p, 4)
-#     })
-
 @app.post("/api/predict")
 def predict():
     if "image" not in request.files:
         return jsonify({"error": "Need image"}), 400
 
-    # Since TensorFlow is not running on Render,
-    # we return a dummy prediction so the frontend works.
-
-    import random
+    # Generate a random fake prediction
     conf = round(random.uniform(0.55, 0.95), 3)
     label = "valid" if random.random() > 0.5 else "invalid"
 
     return jsonify({
         "label": label,
         "confidence": conf,
-        "note": "TensorFlow model not loaded (Render does not support TF)"
+        "note": "TensorFlow disabled — using simulated prediction"
     })
 
 
-
 # --------------------------
-# LLM LABEL ENDPOINT
+# /api/llm/label  (DeepSeek)
 # --------------------------
 @app.post("/api/llm/label")
 def llm_label():
     if "image" not in request.files:
-        return jsonify({"error": "No image provided"}), 400
+        return jsonify({"error": "No image"}), 400
 
     img_bytes = request.files["image"].read()
     b64 = base64.b64encode(img_bytes).decode("utf-8")
 
     prompt = """
-    You are a pro trading analyst.
-    Analyze this chart and return STRICTLY this format:
+    You are a professional trading analyst.
+    Analyze this chart. Respond EXACTLY in this format:
+
     Pattern: ...
     Trend: ...
     Entry Logic: ...
@@ -87,25 +72,26 @@ def llm_label():
     """
 
     try:
-        resp = deep_client.chat.completions.create(
+        response = deep_client.chat.completions.create(
             model="deepseek-chat",
             messages=[
-                {"role": "system", "content": "Chart analysis assistant"},
+                {"role": "system", "content": "Chart pattern analyst"},
                 {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": f"data:image/png;base64,{b64}"}
+                        {"type": "image_url",
+                         "image_url": f"data:image/png;base64,{b64}"}
                     ]
                 }
             ]
         )
 
-        text = resp.choices[0].message["content"].strip()
-        first_line = text.split("\n")[0]
+        text = response.choices[0].message["content"].strip()
+        pattern = text.split("\n")[0]
 
         return jsonify({
-            "pattern": first_line,
+            "pattern": pattern,
             "reason": text
         })
 
@@ -114,27 +100,29 @@ def llm_label():
 
 
 # --------------------------
-# FAKE SIMILARITY ENDPOINTS
-# (your frontend requires them)
+# Fake /api/similar
 # --------------------------
 @app.post("/api/similar")
 def similar_simple():
     return jsonify([
         {"path": "dummy1.png", "distance": 0.12},
-        {"path": "dummy2.png", "distance": 0.2}
-    ])
-
-
-@app.post("/api/similar_smart")
-def similar_smart():
-    return jsonify([
-        {"path": "smart1.png", "distance": 0.08},
-        {"path": "smart2.png", "distance": 0.15}
+        {"path": "dummy2.png", "distance": 0.20},
     ])
 
 
 # --------------------------
-# FAKE LEVEL EXTRACTION
+# Fake /api/similar_smart
+# --------------------------
+@app.post("/api/similar_smart")
+def similar_smart():
+    return jsonify([
+        {"path": "smart1.png", "distance": 0.08},
+        {"path": "smart2.png", "distance": 0.15},
+    ])
+
+
+# --------------------------
+# Fake /api/extract_levels
 # --------------------------
 @app.post("/api/extract_levels")
 def extract_levels():
@@ -146,16 +134,16 @@ def extract_levels():
 
 
 # --------------------------
-# ROOT TEST
+# Home endpoint
 # --------------------------
 @app.get("/")
 def home():
-    return {"status": "backend running"}
+    return {"status": "backend running", "service": "AI Trading Vision"}
 
 
 # --------------------------
-# RUN (HuggingFace uses PORT)
+# Run app (Render uses PORT)
 # --------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
+    port = int(os.environ.get("PORT", 10000))  # Render uses dynamic port
     app.run(host="0.0.0.0", port=port)

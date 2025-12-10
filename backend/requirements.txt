@@ -8,5 +8,6 @@ opencv-python-headless==4.9.0.80
 
 python-dotenv==1.0.0
 setuptools==69.0.3
+wheel==0.42.0
 
-deepseek==0.0.9   # ← use correct DeepSeek pip package
+deepseek==0.0.17
