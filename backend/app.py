@@ -7,14 +7,14 @@ import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
-# import cv2
-# import numpy as np
+import cv2
+import numpy as np
 
 # --------------------------
 # DeepSeek API
 # --------------------------
-# from deepseek import DeepSeekAPI
-# deep_client = DeepSeekAPI(api_key=os.getenv("DEEPSEEK_API_KEY"))
+from deepseek import DeepSeekAPI
+deep_client = DeepSeekAPI(api_key=os.getenv("DEEPSEEK_API_KEY"))
 
 # --------------------------
 # FLASK INIT
@@ -52,51 +52,51 @@ def predict():
 # --------------------------
 # /api/llm/label  (DeepSeek)
 # --------------------------
-# @app.post("/api/llm/label")
-# def llm_label():
-#     if "image" not in request.files:
-#         return jsonify({"error": "No image"}), 400
+@app.post("/api/llm/label")
+def llm_label():
+    if "image" not in request.files:
+        return jsonify({"error": "No image"}), 400
 
-#     img_bytes = request.files["image"].read()
-#     b64 = base64.b64encode(img_bytes).decode("utf-8")
+    img_bytes = request.files["image"].read()
+    b64 = base64.b64encode(img_bytes).decode("utf-8")
 
-#     prompt = """
-#     You are a professional trading analyst.
-#     Analyze this chart. Respond EXACTLY in this format:
+    prompt = """
+    You are a professional trading analyst.
+    Analyze this chart. Respond EXACTLY in this format:
 
-#     Pattern: ...
-#     Trend: ...
-#     Entry Logic: ...
-#     Risk: ...
-#     Grade: A/B/C
-#     """
+    Pattern: ...
+    Trend: ...
+    Entry Logic: ...
+    Risk: ...
+    Grade: A/B/C
+    """
 
-#     try:
-#         response = deep_client.chat.completions.create(
-#             model="deepseek-chat",
-#             messages=[
-#                 {"role": "system", "content": "Chart pattern analyst"},
-#                 {
-#                     "role": "user",
-#                     "content": [
-#                         {"type": "text", "text": prompt},
-#                         {"type": "image_url",
-#                          "image_url": f"data:image/png;base64,{b64}"}
-#                     ]
-#                 }
-#             ]
-#         )
+    try:
+        response = deep_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "Chart pattern analyst"},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url",
+                         "image_url": f"data:image/png;base64,{b64}"}
+                    ]
+                }
+            ]
+        )
 
-#         text = response.choices[0].message["content"].strip()
-#         pattern = text.split("\n")[0]
+        text = response.choices[0].message["content"].strip()
+        pattern = text.split("\n")[0]
 
-#         return jsonify({
-#             "pattern": pattern,
-#             "reason": text
-#         })
+        return jsonify({
+            "pattern": pattern,
+            "reason": text
+        })
 
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.post("/api/llm/label")
 def llm_label():
