@@ -3,6 +3,4 @@ Flask-CORS==4.0.0
 python-dotenv==1.0.0
 gunicorn==21.2.0
 Pillow==10.2.0
-opencv-python-headless==4.9.0.80
-numpy==1.26.4
 deepseek==0.8.1

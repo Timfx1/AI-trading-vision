@@ -7,8 +7,8 @@ import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
-import cv2
-import numpy as np
+# import cv2
+# import numpy as np
 
 # --------------------------
 # DeepSeek API
