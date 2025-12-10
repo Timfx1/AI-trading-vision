@@ -1,11 +1,9 @@
 # backend/llm/cleaner.py
 
 import os, base64, json
-from openai import OpenAI
 from PIL import Image
 import numpy as np
 
-client = OpenAI()
 
 SYSTEM_PROMPT = """
 You are a trading chart data quality inspector.

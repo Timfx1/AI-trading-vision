@@ -1,9 +1,7 @@
 # backend/llm/vision_labeler.py
 import base64
 import json
-from openai import OpenAI
 
-client = OpenAI()
 
 SYSTEM_PROMPT = """
 You are a trading chart analyst. Your job is to analyze forex trading screenshots.

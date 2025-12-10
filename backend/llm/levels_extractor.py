@@ -2,9 +2,7 @@
 
 import base64
 import json
-from openai import OpenAI
 
-client = OpenAI()
 
 SYSTEM_PROMPT = """
 You are an AI trained to extract trade levels (Entry, Stop Loss, Take Profit)
