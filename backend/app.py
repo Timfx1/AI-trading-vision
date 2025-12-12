@@ -58,8 +58,8 @@ from auth.auth import auth_bp, init_user_db
 # ---------------------------------------------------------
 # OpenAI
 # ---------------------------------------------------------
-from openai import OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# from openai import OpenAI
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ---------------------------------------------------------
 # Flask init
@@ -266,11 +266,11 @@ def add_signal():
 #  LLM PATTERN IDENTIFICATION (DeepSeek)
 # -------------------------------
 
-from deepseek import DeepSeek
+from deepseek import DeepSeekAPI
 import base64
 
 DEEPSEEK_KEY = os.getenv("DEEPSEEK_API_KEY")
-deep_client = DeepSeek(DEEPSEEK_KEY)
+deep_client = DeepSeekAPI(DEEPSEEK_KEY)
 
 @app.post("/api/llm/label")
 def llm_label():
