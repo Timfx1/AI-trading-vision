@@ -65,7 +65,27 @@ from auth.auth import auth_bp, init_user_db
 # Flask init
 # ---------------------------------------------------------
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+from flask_cors import CORS
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=True
+)
+
+@app.after_request
+def after_request(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add(
+        "Access-Control-Allow-Headers",
+        "Content-Type,Authorization"
+    )
+    response.headers.add(
+        "Access-Control-Allow-Methods",
+        "GET,POST,OPTIONS"
+    )
+    return response
+
 
 # Attach auth routes
 app.register_blueprint(auth_bp, url_prefix="/api/auth")
