@@ -37,6 +37,9 @@ import pytesseract
 import base64
 import io
 
+import os
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
 
 
 # ---------------------------------------------------------
@@ -228,64 +231,9 @@ def add_signal():
     return jsonify({"ok": True, "signal": entry})
 
 
+# # ---------------------------------------------------------
+# LLM PATTERN IDENTIFICATION (DeepSeek Vision)
 # ---------------------------------------------------------
-# LLM Pattern Labeling
-# ---------------------------------------------------------
-# @app.post("/api/llm/label")
-# def llm_label():
-#     try:
-#         if "image" not in request.files:
-#             print("No image provided")
-#             return jsonify({"error": "No image"}), 400
-
-#         file = request.files["image"]
-
-#         # Read image and encode base64
-#         import base64
-#         img_bytes = file.read()
-#         b64 = base64.b64encode(img_bytes).decode("utf-8")
-
-#         # Debug check
-#         print("🔐 OPENAI KEY:", os.getenv("OPENAI_API_KEY")[:12], "...")
-
-#         # LLM Vision Request
-#         response = client.chat.completions.create(
-#             model="gpt-4o-mini",
-#             messages=[
-#                 {
-#                     "role": "user",
-#                     "content": [
-#                         {"type": "text",
-#                          "text": "Identify the trading pattern, trend direction, and entry logic."},
-#                         {
-#                             "type": "image_url",
-#                             "image_url": {
-#                                 "url": f"data:image/png;base64,{b64}"
-#                             }
-#                         }
-#                     ]
-#                 }
-#             ]
-#         )
-
-#         txt = response.choices[0].message.content.strip()
-#         pattern = txt.split("\n")[0]
-
-#         return jsonify({
-#             "pattern": pattern,
-#             "reason": txt
-#         })
-
-#     except Exception as e:
-#         print("🔥🔥🔥 LLM ERROR 🔥🔥🔥")
-#         import traceback
-#         traceback.print_exc()
-#         return jsonify({"error": str(e)}), 500
-
-# -------------------------------
-#  LLM PATTERN IDENTIFICATION (DeepSeek)
-# -------------------------------
-
 from deepseek import DeepSeekAPI
 import base64
 
@@ -297,44 +245,43 @@ def llm_label():
     if "image" not in request.files:
         return jsonify({"error": "No image"}), 400
 
-    file = request.files["image"]
-    img_bytes = file.read()
-    b64 = base64.b64encode(img_bytes).decode("utf-8")
+    try:
+        file = request.files["image"]
+        img_bytes = file.read()
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
 
-    prompt = f"""
-You are a professional market analyst. 
-Look at the provided chart image and identify:
+        prompt = """
+You are a professional market analyst.
 
-1. The pattern name
-2. Trend direction (uptrend / downtrend / ranging)
-3. Entry logic (why enter)
-4. Risk context (why good or bad)
-5. Whether it's a high-quality setup (A/B/C grade)
+Analyze the trading chart and provide:
+1. Pattern name
+2. Trend direction
+3. Entry logic
+4. Risk context
+5. Setup quality (A / B / C)
 
-Respond with short clear text.
-
-Image is provided below as base64.
+Be concise and practical.
 """
 
-    try:
         response = deep_client.chat.completions.create(
             model="deepseek-chat",
             messages=[
-                {"role": "system", "content": "You analyze chart patterns."},
+                {"role": "system", "content": "You analyze trading charts."},
                 {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": prompt},
-                        {"type": "image_url", 
-                         "image_url": f"data:image/png;base64,{b64}"}
+                        {
+                            "type": "image_url",
+                            "image_url": f"data:image/png;base64,{b64}"
+                        }
                     ],
                 },
-            ]
+            ],
+            temperature=0.4,
         )
 
         full_text = response.choices[0].message["content"].strip()
-
-        # first line becomes simplified pattern name
         pattern = full_text.split("\n")[0][:60]
 
         return jsonify({
@@ -343,10 +290,86 @@ Image is provided below as base64.
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Fail-safe: never crash frontend
+        return jsonify({
+            "pattern": "Unavailable",
+            "reason": "LLM service temporarily unavailable."
+        }), 200
 
 
 
+
+
+
+@app.post("/api/vision/levels")
+def vision_extract_levels():
+    if "image" not in request.files:
+        return jsonify({"error": "No image"}), 400
+
+    img_bytes = request.files["image"].read()
+    b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+    prompt = """
+You are a professional trading analyst.
+
+Visually analyze the chart image and extract REAL price levels if visible.
+
+Tasks:
+1. Identify ENTRY price
+2. Identify STOP LOSS
+3. Identify TP1
+4. Identify TP2 (if visible)
+5. Identify trade direction (LONG / SHORT)
+
+Rules:
+- Use ONLY prices you can visually infer
+- If a level is not visible, return null
+- Return STRICT JSON ONLY
+- No explanations
+
+JSON FORMAT:
+{
+  "direction": "LONG" | "SHORT" | null,
+  "entry": number | null,
+  "sl": number | null,
+  "tp1": number | null,
+  "tp2": number | null
+}
+"""
+
+    try:
+        response = deep_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "You extract trading levels from charts."},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": f"data:image/png;base64,{b64}"
+                        }
+                    ]
+                }
+            ],
+            temperature=0.0
+        )
+
+        raw = response.choices[0].message["content"].strip()
+        data = json.loads(raw)
+
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({
+            "direction": None,
+            "entry": None,
+            "sl": None,
+            "tp1": None,
+            "tp2": None,
+            "error": str(e)
+        }), 200
 
 # ---------------------------------------------------------
 # SL/TP Extraction
