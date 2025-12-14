@@ -6,15 +6,48 @@ import { FaCopy, FaInfoCircle } from "react-icons/fa";
 import LevelsModal from "./LevelsModal";
 import RuleAdvisor from "./RuleAdvisor";
 import RiskAdvisor from "./RiskAdvisor";
+import ComparisonPanel from "./ComparisonPanel";
+
 
 import { useLang } from "../lang/LanguageContext";
 import { useAuth } from "../auth/AuthContext";
 
-const BACKEND = "https://ai-trading-vision-1.onrender.com";
+const BACKEND =
+  process.env.NODE_ENV === "development"
+    ? "http://127.0.0.1:5000"
+    : "https://ai-trading-vision-1.onrender.com";
+
+// const BACKEND = "https://ai-trading-vision-1.onrender.com";
 
 export default function PredictPanel() {
   const { strings } = useLang();
   const { user } = useAuth();
+  const [similar, setSimilar] = useState([]);
+const [comparisons, setComparisons] = useState([]);
+const [savedMsg, setSavedMsg] = useState("");
+const saveAnalysis = () => {
+  if (!cnnResult) {
+    alert("Run analysis first");
+    return;
+  }
+
+  const item = {
+    id: Date.now(),
+    image: preview,
+    cnn: cnnResult,
+    llm: llmLabel,
+    levels,
+    createdAt: new Date().toISOString(),
+  };
+
+  const existing = JSON.parse(localStorage.getItem("analyses") || "[]");
+  localStorage.setItem("analyses", JSON.stringify([item, ...existing]));
+
+  setSavedMsg("Analysis saved ✔");
+  setTimeout(() => setSavedMsg(""), 1500);
+};
+
+
 
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -41,29 +74,75 @@ export default function PredictPanel() {
     setCopyMsg("Copied!");
     setTimeout(() => setCopyMsg(""), 1200);
   };
+  const callSimilarSimple = async (form) => {
+  const res = await axios.post(`${BACKEND}/api/similar`, form);
+  return res.data || [];
+};
 
-  const runAnalysis = async () => {
-    if (!image) return alert("Upload a chart first");
-    setLoading(true);
+const callSimilarSmart = async (form) => {
+  const res = await axios.post(`${BACKEND}/api/similar_smart`, form);
+  return res.data || [];
+};
 
-    const form = new FormData();
-    form.append("image", image);
+const normalize = (arr, source) =>
+  (arr || []).map((x) => ({
+    path: x.path || x.url,
+    label: x.label || "unknown",
+    distance: x.distance ?? 0,
+    similarity: 1 / (1 + (x.distance ?? 0)),
+    source
+  }));
 
-    try {
-      const cnn = await axios.post(`${BACKEND}/api/predict`, form);
-      setCnnResult(cnn.data);
 
-      const llm = await axios.post(`${BACKEND}/api/llm/label`, form);
-      setLlmLabel(llm.data);
+ const runAnalysis = async () => {
+  if (!image) return alert("Upload a chart first");
+  setLoading(true);
+  setComparisons([]); // reset old results
 
-      const lvl = await axios.post(`${BACKEND}/api/vision/levels`, form);
-setLevels(lvl.data);
+  const form = new FormData();
+  form.append("image", image);
 
-    } catch (e) {
-      alert("Backend error");
+  try {
+    // 1️⃣ CNN
+    const cnn = await axios.post(`${BACKEND}/api/predict`, form);
+    setCnnResult(cnn.data);
+
+    // 2️⃣ LLM
+    const llm = await axios.post(`${BACKEND}/api/llm/label`, form);
+    setLlmLabel(llm.data);
+
+    // 3️⃣ Levels
+    const lvl = await axios.post(`${BACKEND}/api/vision/levels`, form);
+    setLevels(lvl.data);
+
+    // 4️⃣ 🔥 SIMILAR SETUPS (THIS WAS MISSING)
+    let all = [];
+
+    if (mode === "simple" || mode === "hybrid") {
+      try {
+        const s = await callSimilarSimple(form);
+        all = all.concat(normalize(s, "simple"));
+      } catch {}
     }
-    setLoading(false);
-  };
+
+    if (mode === "smart" || mode === "hybrid") {
+      try {
+        const s = await callSimilarSmart(form);
+        all = all.concat(normalize(s, "smart"));
+      } catch {}
+    }
+
+    all.sort((a, b) => b.similarity - a.similarity);
+    setComparisons(all.slice(0, 6));
+
+  } catch (e) {
+    alert("Backend error");
+    console.error(e);
+  }
+
+  setLoading(false);
+};
+
 
   return (
     <div className="glass p-6 rounded-3xl max-w-5xl mx-auto">
@@ -108,6 +187,13 @@ setLevels(lvl.data);
       >
         {loading ? "Analyzing…" : "Run Analysis"}
       </button>
+      <button
+  onClick={saveAnalysis}
+  className="btn-accent-outline px-5 py-2 rounded-xl mt-3"
+>
+  Save Analysis
+</button>
+
 
       {/* SIDE BY SIDE */}
       {preview && cnnResult && (
@@ -142,6 +228,10 @@ setLevels(lvl.data);
           </pre>
         </div>
       )}
+      {/* -----------------------------
+    SIMILAR SETUPS  ✅ PLACE HERE
+------------------------------ */}
+<ComparisonPanel comparisons={comparisons} />
 
       {/* LEVELS */}
       {levels && (

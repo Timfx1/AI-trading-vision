@@ -13,7 +13,7 @@ export default function ComparisonPanel({ comparisons }) {
   if (!comparisons || comparisons.length === 0) {
     return (
       <div className="glass p-4 rounded-xl text-sm opacity-80">
-        {strings.similarSetups}: None yet.
+        {strings.similarSetups}No comparisons yet. Upload a chart and run Predict & Compare to see similar setups from your dataset.
       </div>
     );
   }

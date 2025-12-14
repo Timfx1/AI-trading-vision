@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import PredictPanel from "./components/PredictPanel";
-import ComparisonPanel from "./components/ComparisonPanel";
 import HistoryPanel from "./components/HistoryPanel";
 import DatasetUploader from "./components/DatasetUploader";
 import DatasetCleaner from "./components/DatasetCleaner";
@@ -130,7 +129,7 @@ export default function MainApp() {
       {/* MAIN PANELS */}
       <div className="flex flex-col gap-16 max-w-5xl mx-auto">
         <PredictPanel />
-        <ComparisonPanel />
+        
         <HistoryPanel />
         <DatasetUploader />
         <DatasetCleaner />

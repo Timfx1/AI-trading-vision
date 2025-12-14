@@ -121,6 +121,18 @@ def load_reference_setups():
     print(f"Loaded {len(REFS)} references.")
 
 
+SMART_MODEL = None
+SMART_EMBEDDER = None
+
+def load_smart():
+    global SMART_MODEL, SMART_EMBEDDER
+    if SMART_MODEL is None:
+        SMART_MODEL = tf.keras.models.load_model("outputs/model.keras")
+        SMART_EMBEDDER = tf.keras.Model(
+            inputs=SMART_MODEL.input,
+            outputs=SMART_MODEL.layers[-2].output
+        )
+
 # ---------------------------------------------------------
 # SQLite: Signals
 # ---------------------------------------------------------
@@ -494,31 +506,51 @@ def predict():
 
     return jsonify({"label": label, "confidence": round(conf, 4)})
 
+print("🔥 /api/similar called")
 
+# ---------------------------------------------------------
+# Simple Similarity
+# ---------------------------------------------------------
 # ---------------------------------------------------------
 # Simple Similarity
 # ---------------------------------------------------------
 @app.post("/api/similar")
 def simple_similar():
-    if "image" not in request.files:
-        return jsonify([])
+    try:
+        if "image" not in request.files:
+            return jsonify([])
 
-    img = Image.open(request.files["image"])
-    qh = imagehash.phash(img)
+        # ✅ MUST use .stream
+        img = Image.open(request.files["image"].stream).convert("RGB")
+        qh = imagehash.phash(img)
 
-    index = pickle.load(open("data/image_index.pkl", "rb"))
+        index_path = os.path.join("data", "image_index.pkl")
+        if not os.path.exists(index_path):
+            return jsonify({"error": "image_index.pkl not found"}), 500
 
-    out = []
-    for item in index:
-        dist = qh - item["hash"]
-        out.append({
-            "path": item["path"],
-            "label": item["label"],
-            "distance": float(dist),
-            "mode": "simple"
-        })
+        index = pickle.load(open(index_path, "rb"))
 
-    return jsonify(sorted(out, key=lambda x: x["distance"])[:6])
+        out = []
+        for item in index:
+            dist = qh - item["hash"]
+            out.append({
+                "path": item["path"],
+                "label": item["label"],
+                "distance": float(dist),
+                "mode": "simple"
+            })
+
+        # ✅ RETURN MUST BE PRESENT
+        return jsonify(sorted(out, key=lambda x: x["distance"])[:6])
+
+    except Exception as e:
+        print("❌ SIMPLE SIMILAR ERROR:", e)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
 
 
 # ---------------------------------------------------------
@@ -529,14 +561,15 @@ def smart_similar():
     if not TF_OK or not os.path.exists("outputs/model.keras"):
         return jsonify([])
 
-    model = tf.keras.models.load_model("outputs/model.keras")
-    embedder = tf.keras.Model(inputs=model.input, outputs=model.layers[-2].output)
+    load_smart()
 
     index = pickle.load(open("data/embedding_index.pkl", "rb"))
 
-    img = Image.open(request.files["image"]).convert("RGB")
-    arr = np.array(img.resize((224, 224))) / 255.0
-    emb = embedder.predict(np.expand_dims(arr, 0), verbose=0)[0]
+    img = Image.open(request.files["image"].stream).convert("RGB")
+    img = img.resize((224, 224))
+    arr = np.expand_dims(np.array(img) / 255.0, 0)
+
+    emb = SMART_EMBEDDER.predict(arr, verbose=0)[0]
 
     out = []
     for it in index:
@@ -549,6 +582,9 @@ def smart_similar():
         })
 
     return jsonify(sorted(out, key=lambda x: x["distance"])[:6])
+
+
+
 
 
 # ---------------------------------------------------------
@@ -698,6 +734,13 @@ def cleaner_scan():
 @app.route("/images/<path:filename>")
 def serve_image(filename):
     return send_from_directory("dataset", filename)
+
+
+try:
+    if not os.path.exists("data/image_index.pkl"):
+        rebuild_image_hash_index()
+except Exception as e:
+    print("⚠ Could not rebuild hash index:", e)
 
 
 # ---------------------------------------------------------
