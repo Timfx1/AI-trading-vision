@@ -138,7 +138,7 @@ def sse_stream(q: queue.Queue):
         yield f"data: {json.dumps(payload)}\n\n"
 
 
-# === API ROUTES ===
+# === API ROUTES Created===
 @app.get("/api/summary")
 def get_summary():
     return jsonify(STATE["summary"])
