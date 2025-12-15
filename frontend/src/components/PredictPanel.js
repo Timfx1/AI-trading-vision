@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { FaInfoCircle } from "react-icons/fa";
 import ComparisonPanel from "./ComparisonPanel";
+import { backendFetch } from "../utils/backendFetch";
+
 
 export default function PredictPanel() {
   const [file, setFile] = useState(null);
@@ -35,35 +37,71 @@ to compare market structure, not just pixels.\n\nGood for:\n• Different zoom l
   };
 
   // Helpers to call backend
+  // const callPredict = async () => {
+  //   const formData = new FormData();
+  //   formData.append("image", file);
+  //   const res = await fetch("http://127.0.0.1:5000/api/predict", {
+  //     method: "POST",
+  //     body: formData,
+  //   });
+  //   return res.json();
+  // };
   const callPredict = async () => {
-    const formData = new FormData();
-    formData.append("image", file);
-    const res = await fetch("http://127.0.0.1:5000/api/predict", {
-      method: "POST",
-      body: formData,
-    });
-    return res.json();
-  };
+  const formData = new FormData();
+  formData.append("image", file);
 
+  const res = await backendFetch("/api/predict", {
+    method: "POST",
+    body: formData,
+  });
+
+  return res.json();
+};
+
+
+  // const callSimilarSimple = async () => {
+  //   const formData = new FormData();
+  //   formData.append("image", file);
+  //   const res = await fetch("http://127.0.0.1:5000/api/similar", {
+  //     method: "POST",
+  //     body: formData,
+  //   });
+  //   return res.json();
+  // };
   const callSimilarSimple = async () => {
-    const formData = new FormData();
-    formData.append("image", file);
-    const res = await fetch("http://127.0.0.1:5000/api/similar", {
-      method: "POST",
-      body: formData,
-    });
-    return res.json();
-  };
+  const formData = new FormData();
+  formData.append("image", file);
 
+  const res = await backendFetch("/api/similar", {
+    method: "POST",
+    body: formData,
+  });
+
+  return res.json();
+};
+
+
+  // const callSimilarSmart = async () => {
+  //   const formData = new FormData();
+  //   formData.append("image", file);
+  //   const res = await fetch("http://127.0.0.1:5000/api/similar_smart", {
+  //     method: "POST",
+  //     body: formData,
+  //   });
+  //   return res.json();
+  // };
   const callSimilarSmart = async () => {
-    const formData = new FormData();
-    formData.append("image", file);
-    const res = await fetch("http://127.0.0.1:5000/api/similar_smart", {
-      method: "POST",
-      body: formData,
-    });
-    return res.json();
-  };
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const res = await backendFetch("/api/similar_smart", {
+    method: "POST",
+    body: formData,
+  });
+
+  return res.json();
+};
+
 
   const normalizeSimple = (arr) =>
     (arr || []).map((x) => {
