@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import PredictPanel from "./components/PredictPanel";
 import ComparisonsPanel from "./components/ComparisonPanel";
-import { FaMoon, FaSun, FaQuestionCircle } from "react-icons/fa";
+import {  FaQuestionCircle } from "react-icons/fa";
 import HistoryPanel from "./components/HistoryPanel";
 import HelpWidget from "./components/HelpWidget";
 
 export default function App() {
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode] = useState(true);
+
   const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
@@ -15,11 +16,8 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col justify-between items-center transition-all duration-500 ${
-        darkMode
-          ? "bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white"
-          : "bg-gradient-to-br from-white via-gray-100 to-gray-300 text-gray-900"
-      }`}
+     className="min-h-screen flex flex-col justify-between items-center bg-gradient-to-br from-gray-900 via-black to-gray-800 text-white"
+
     >
       {/* Header */}
       <header className="w-full flex justify-between items-center px-8 py-4 border-b border-white/10 backdrop-blur-md">
@@ -31,12 +29,7 @@ export default function App() {
           >
             <FaQuestionCircle />
           </button>
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className="text-xl hover:text-teal-300 transition"
-          >
-            {darkMode ? <FaSun /> : <FaMoon />}
-          </button>
+          
         </div>
       </header>
 
